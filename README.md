@@ -3,6 +3,7 @@ Python version is 3.7.5
 
 `python -m autodj.main`
 
+Use `space` to trigger shader and `enter` to change shader. 
 ## DJ commands
 
 To run the application, run the `main.py` script in the `AIDJ-python3/Application` directory:
