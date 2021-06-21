@@ -1,0 +1,11 @@
+scikit-learn==0.20.3
+moderngl==5.6.4
+moderngl-window==2.3.0
+colorlog==2.10.0
+essentia==2.1b6.dev374
+joblib==0.11
+librosa==0.5.0
+numpy==1.20.3
+pyAudio==0.2.8
+scipy==1.6.3
+yodel==0.3.0
