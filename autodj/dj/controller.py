@@ -1,6 +1,8 @@
 # Copyright 2017 Len Vande Veire, IDLab, Department of Electronics and Information Systems, Ghent University
 # This file is part of the source code for the Auto-DJ research project, published in Vande Veire, Len, and De Bie, Tijl, "From raw audio to a seamless mix: an artificial intelligence approach to creating an automated DJ system.", 2018 (submitted)
 # Released under AGPLv3 license.
+import random
+import time
 
 import numpy as np
 import bisect
@@ -18,6 +20,9 @@ from . import songtransitions
 from .timestretching import time_stretch_and_pitch_shift
 
 import logging
+
+from .tracklister import NUM_SONGS_IN_KEY_MINIMUM
+
 logger = logging.getLogger('colorlogger')
 
 import os
@@ -39,7 +44,8 @@ class DjController:
 		self.skipFlag = multiprocessing.Value('b', False)
 		self.queue = Queue(6)				# A blocking queue of to pass at most N audio fragments between audio thread and generation thread
 		self.visual_queue = Queue(6)
-		
+		self.choose_track_case = multiprocessing.Value('i', 0)
+
 		self.currentMasterString = multiprocessing.Manager().Value(ctypes.c_char_p, '')
 		
 		self.pyaudio = None
@@ -54,7 +60,7 @@ class DjController:
 		self.audio_to_save = None
 		self.audio_save_queue = Queue(6)
 		self.save_tracklist = []
-			
+
 	def play(self, save_mix = False):
 								
 		self.playEvent.set()
@@ -65,8 +71,8 @@ class DjController:
 			self.audio_to_save = []
 			self.save_tracklist = []
 			
-			if self.save_mix:
-				Process(target = self._flush_save_audio_buffer, args=(self.audio_save_queue,)).start()
+			# if self.save_mix:
+			# 	Process(target = self._flush_save_audio_buffer, args=(self.audio_save_queue,)).start()
 			
 			self.dj_thread = Process(target = self._dj_loop, args=(self.isPlaying,))
 			self.audio_thread = Process(target = self._audio_play_loop, args=(self.playEvent, self.isPlaying, self.currentMasterString))
@@ -99,27 +105,6 @@ class DjController:
 		self.audio_to_save = []
 		self.save_tracklist = []
 			
-	def _flush_save_audio_buffer(self, queue):
-
-		while True:
-			filename, audio, tracklist = queue.get()
-			if not (filename is None):
-				logger.debug('Saving {} to disk, length {}'.format(filename, len(audio)))
-				if self.stereo:
-					writer = AudioWriter(filename=filename, format='wav')
-				else:
-					writer = MonoWriter(filename=filename, format='wav')
-				writer(np.array(audio.T,dtype='single'))
-				# Save tracklist
-				logger.debug('Saving tracklist')
-				with open(self.save_dir_tracklist,'a+') as csvfile:
-					writer = csv.writer(csvfile)
-					for line in tracklist:
-						writer.writerow([line])
-			else:
-				logger.debug('Stopping audio saving thread!')
-				return
-		
 	def skipToNextSegment(self):
 		if not self.queue.empty():
 			self.skipFlag.value = True
@@ -137,7 +122,10 @@ class DjController:
 		if self.audio_thread is None:
 			return
 		self.playEvent.clear()
-		
+
+	def pick_track(self, value):
+		self.choose_track_case.value = value
+
 	def stop(self):
 		# If paused, then continue playing (deadlock prevention)
 		try:
@@ -166,21 +154,8 @@ class DjController:
 	def _audio_play_loop(self, playEvent, isPlaying, currentMasterString):
 		
 		if self.pyaudio is None:
-			# Disable output for a while, because pyaudio prints annoying error messages that are irrelevant but that cannot be surpressed :(
-			# http://stackoverflow.com/questions/977840/redirecting-fortran-called-via-f2py-output-in-python/978264#978264
-			# null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
-			# save = os.dup(1), os.dup(2)
-			# os.dup2(null_fds[0], 1)
-			# os.dup2(null_fds[1], 2)
-			
 			# Open the audio
 			self.pyaudio = pyaudio.PyAudio()
-			
-			# # Reset stderr, stdout
-			# os.dup2(save[0], 1)
-			# os.dup2(save[1], 2)
-			# os.close(null_fds[0])
-			# os.close(null_fds[1])
 			
 		if self.stream is None:
 			self.stream = self.pyaudio.open(format = pyaudio.paFloat32,
@@ -226,10 +201,9 @@ class DjController:
 
 				current_track_position = time() - start + current_audio_start
 				if len(beats) and current_track_position > beats[0]:
-					print(f'Removing beats[0]: {beats[0]} from beats list and trigger Beat! {len(beats)}')
+					# print(f'Removing beats[0]: {beats[0]} from beats list and trigger Beat! {len(beats)}')
 					del beats[0]
 					self.visual_queue.put('Beat')
-
 
 				self.stream.write(toPlayNow, num_frames=toPlayNow.shape[0], exception_on_underflow=False)
 
@@ -311,14 +285,13 @@ class DjController:
 		
 		mix_buffer = current_audio_stretched
 		mix_buffer_cf_start_sample = int(f * (current_song.downbeats[cue_master_out] * 44100))
-
 		while True:
 			# Cue the audio from the previous event point till the current event point.
 			# The "type" of audio (one song added, one song less, or change of master) is determined
 			# by the label of the previous event in the audio buffer
 			prev_end_sample = 0
+
 			for end_sample, in_or_out, cur_fade_type in tracklist_changes:
-				
 				if end_sample > mix_buffer_cf_start_sample:
 					break	
 						
@@ -340,8 +313,8 @@ class DjController:
 					# beat_delay = current_song.beats[1]
 					# current_audio_start
 					beats = [b for b in current_song.beats if b > current_audio_start / 44100]
-					downbeats = [db for db in current_song.downbeats if db > current_audio_start / 44100]
-					toPlayTuple = (toPlay,curPlayingString(cur_fade_type_str), song_titles_in_buffer[songs_playing_master], downbeats, current_audio_start)
+					# downbeats = [db for db in current_song.downbeats if db > current_audio_start / 44100]
+					toPlayTuple = (toPlay,curPlayingString(cur_fade_type_str), song_titles_in_buffer[songs_playing_master], beats, current_audio_start)
 					# Play this audio
 					self.queue.put(toPlayTuple, isPlaying.value)	# Block until slot available, unless audio has stopped: this might raise an exception which is caught below
 					prev_end_sample = end_sample
@@ -360,15 +333,56 @@ class DjController:
 			prev_fade_out_len = fade_out_len
 			
 			cue_master_out, next_fade_type, max_fade_in_len, fade_out_len = tracklister.getMasterQueue(current_song, cue_master_in + fade_in_len, prev_fade_type)
-			next_song, cue_next_in, cue_master_out, fade_in_len, semitone_offset = self.tracklister.getBestNextSongAndCrossfade(current_song, cue_master_out, max_fade_in_len, fade_out_len, next_fade_type)
-			anchor_sample = int(44100 * current_song.downbeats[cue_master_in])		
+
+			next_song, cue_next_in, cue_master_out, fade_in_len, semitone_offset = self.tracklister.getBestNextSongAndCrossfade(
+				current_song, cue_master_out, max_fade_in_len, fade_out_len, next_fade_type)
+
+			if random.randint(0, 100) <= 100:
+				next_song_2, cue_next_in_2, cue_master_out_2, fade_in_len_2, semitone_offset_2 = self.tracklister.getBestNextSongAndCrossfade(
+					current_song, cue_master_out, max_fade_in_len, fade_out_len, next_fade_type)
+
+				logger.info(f'Type "1" for {next_song.title}.')
+				logger.info(f'Type "2" for {next_song_2.title}.')
+				i = 15
+				while True:
+					if self.choose_track_case.value:
+						if self.choose_track_case.value == 1:
+							...
+							# self.tracklister.songsPlayed.remove(next_song_2)
+							# self.tracklister.songsUnplayed.append(next_song_2)
+						elif self.choose_track_case.value == 2:
+							# self.tracklister.songsPlayed.remove(next_song)
+							# self.tracklister.songsUnplayed.append(next_song)
+
+							next_song = next_song_2
+							cue_next_in = cue_next_in_2
+							cue_master_out = cue_master_out_2
+							fade_in_len = fade_in_len_2
+							semitone_offset = semitone_offset_2
+						self.choose_track_case.value = 0
+						break
+					else:
+						time.sleep(1)
+						logger.info(i)
+						i -= 1
+						if i < 0:
+							# self.tracklister.songsPlayed.remove(next_song_2)
+							# self.tracklister.songsUnplayed.append(next_song_2)
+							break
+
+			self.tracklister.semitone_offset = semitone_offset
+			if len(self.tracklister.songsUnplayed) <= NUM_SONGS_IN_KEY_MINIMUM:  # If there are too few songs remaining, then restart
+				logger.debug('Replenishing song pool')
+				self.tracklister.songsUnplayed.extend(self.tracklister.songsPlayed)
+				self.tracklister.songsPlayed = []
+			logger.info(f'Nex track selected: {next_song.title}.')
+
+			anchor_sample = int(44100 * current_song.downbeats[cue_master_in])
 			add_song_to_tracklist(current_song, anchor_sample, next_song, next_fade_type, cue_master_out, fade_in_len, fade_out_len)	
 			mix_buffer_cf_start_sample = int(f * (current_song.downbeats[cue_master_out] * 44100 - anchor_sample))
 			
 			f = current_song.tempo / TEMPO		
 			current_song.openAudio()
-
-			#current_song.audio = util.overlayAudio(current_song.audio.astype('single'), np.array(current_song.beats).astype('single'))
 
 			current_audio_start = int(current_song.downbeats[cue_master_in] * 44100)
 			current_audio_end = int((current_song.downbeats[cue_master_out] * 44100) + (fade_in_len + fade_out_len + 2)*samples_per_dbeat/f) # 2 downbeats margin
@@ -394,5 +408,3 @@ class DjController:
 			else:
 				mix_buffer_deepcpy = np.array(mix_buffer, dtype='single', copy=True)
 				mix_buffer = cf.apply(mix_buffer_deepcpy, current_audio_stretched, TEMPO)
-
-		

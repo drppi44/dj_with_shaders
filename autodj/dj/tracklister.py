@@ -300,7 +300,7 @@ class TrackLister:
 		self.prev_song_theme_descriptor = firstSong.song_theme_descriptor
 		
 		return firstSong
-		
+
 	def chooseNewTheme(self, firstSong):
 		# Initialize the theme centroid
 		# 1. Measure the distance of each song to the first song
@@ -381,7 +381,7 @@ class TrackLister:
 			song_options[i].close()
 			
 		return song_options[song_options_closest_to_centroid[:NUM_SONGS_ONSETS]]
-		
+
 	def getBestNextSongAndCrossfade(self, master_song, master_cue, master_fade_in_len, fade_out_len, fade_type):
 		'''
 			Choose a song that overlaps best with the given song
@@ -393,11 +393,9 @@ class TrackLister:
 		key, scale = songcollection.get_key_transposed(master_song.key, master_song.scale, self.semitone_offset)
 		song_options = self.getSongOptionsInKey(key, scale)
 		closely_related_keys = songcollection.get_closely_related_keys(key, scale)
-		
+
 		# 2. Filter the songs in key based on their distance to the centroid
 		song_options = self.filterSongOptionsByThemeDistance(song_options, master_song)
-		#~ song_options = np.random.choice(song_options, size=NUM_SONGS_ONSETS)
-			
 		# 3. Filter based on vocal activity and ODF overlap
 		master_song.open()
 		best_score = np.inf
@@ -483,19 +481,19 @@ class TrackLister:
 			# This song has been shifted one semitone up or down: this has to be compensated by means of pitch shifting
 			shifted_key_up, shifted_scale_up = songcollection.get_key_transposed(best_song.key, best_song.scale, 1)
 			if (shifted_key_up, shifted_scale_up) in closely_related_keys:
-				self.semitone_offset = 1
+				semitone_offset = 1
 			else:
-				self.semitone_offset = -1
+				semitone_offset = -1
 			logger.debug('Pitch shifting! {} {} by {} semitones'.format(best_song.key, best_song.scale, self.semitone_offset))
 		else:
-			self.semitone_offset = 0
+			semitone_offset = 0
 			
 		self.prev_song_theme_descriptor = master_song.song_theme_descriptor
 		self.songsPlayed.append(best_song)
 		self.songsUnplayed.remove(best_song)
-		if len(self.songsUnplayed) <= NUM_SONGS_IN_KEY_MINIMUM: # If there are too few songs remaining, then restart
-			logger.debug('Replenishing song pool')
-			self.songsUnplayed.extend(self.songsPlayed)
-			self.songsPlayed = []	
+		# if len(self.songsUnplayed) <= NUM_SONGS_IN_KEY_MINIMUM: # If there are too few songs remaining, then restart
+		# 	logger.debug('Replenishing song pool')
+		# 	self.songsUnplayed.extend(self.songsPlayed)
+		# 	self.songsPlayed = []
 			
-		return best_song, best_slave_cue, best_master_cue, best_fade_in_len, self.semitone_offset
+		return best_song, best_slave_cue, best_master_cue, best_fade_in_len, semitone_offset

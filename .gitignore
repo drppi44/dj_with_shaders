@@ -27,7 +27,7 @@ musicchill
 *.tar.gz
 *.gz
 musicmore/
-tensorflow/
+tensorf low/
 *.egg-info/
 .idea/
 f.txt

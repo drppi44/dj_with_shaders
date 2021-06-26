@@ -167,7 +167,7 @@ class ShaderView(mglw.WindowConfig):
         #     # self.beat_val = 1.
         if not self.visual_queue.empty():
             item = self.visual_queue.get()
-            print(f'Visual got: {item}')
+            # print(f'Visual got: {item}')
             self.beat_val = 1.
 
         self.shaders[self.shader_idx].update(mglw.window().size, time, self.beat_val)

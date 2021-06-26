@@ -61,6 +61,8 @@ if __name__ == '__main__':
 				continue
 			sc.load_directory(cmd_split[1])
 			logger.info(str(len(sc.songs)) + ' songs loaded [annotated: ' + str(len(sc.get_annotated())) + ']')
+		elif cmd in ('1', '2'):
+			dj.pick_track(int(cmd))
 		elif cmd == 'play':
 			if len(sc.get_annotated()) == 0:
 				logger.warning('Use the loaddir command to load some songs before playing!')
